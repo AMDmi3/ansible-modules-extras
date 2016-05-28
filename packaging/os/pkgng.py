@@ -82,6 +82,15 @@ options:
         required: false
         choices: [ "yes", "no" ]
         default: no
+    clean:
+        version_added: "2.2"
+        description:
+            - Clean the local cache of fetched remote packages. Use
+              C(yes) to only remove obsolete package files (e.g. old
+              versions) or C(all) to remove all package files.
+        required: false
+        choices: [ "yes", "no", "all" ]
+        default: no
 author: "bleader (@bleader)" 
 notes:
     - When using pkgsite, be careful that already in cache packages won't be downloaded again.
@@ -294,6 +303,22 @@ def autoremove_packages(module, pkgng_path, dir_arg):
 
     return True, "autoremoved %d package(s)" % (autoremove_c)
 
+def clean_packages(module, pkgng_path, mode, dir_arg):
+    all_arg = ''
+    if mode == 'all':
+        all_arg = '-a'
+
+    rc, out, err = module.run_command("%s %s clean %s -n" % (pkgng_path, dir_arg, all_arg))
+
+    will_clean = re.search('^The following package files will be deleted:', out, re.MULTILINE)
+    if not will_clean:
+        return False, "no package(s) to clean"
+
+    if not module.check_mode:
+        rc, out, err = module.run_command("%s %s clean %s" % (pkgng_path, dir_arg, all_arg))
+
+    return True, "cleaned package cache"
+
 def main():
     module = AnsibleModule(
             argument_spec       = dict(
@@ -304,7 +329,9 @@ def main():
                 pkgsite         = dict(default="", required=False),
                 rootdir         = dict(default="", required=False, type='path'),
                 chroot          = dict(default="", required=False, type='path'),
-                autoremove      = dict(default=False, type='bool')),
+                autoremove      = dict(default=False, type='bool'),
+                clean           = dict(default='no', choices=['no', 'yes', 'all'], required=False),
+            ),
             supports_check_mode = True,
             mutually_exclusive  =[["rootdir", "chroot"]])
 
@@ -340,6 +367,11 @@ def main():
 
     if p["autoremove"]:
         _changed, _msg = autoremove_packages(module, pkgng_path, dir_arg)
+        changed = changed or _changed
+        msgs.append(_msg)
+
+    if p["clean"] != 'no':
+        _changed, _msg = clean_packages(module, pkgng_path, p["clean"], dir_arg)
         changed = changed or _changed
         msgs.append(_msg)
 
